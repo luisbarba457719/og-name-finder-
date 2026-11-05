@@ -13,7 +13,7 @@ export async function onRequestPost({ request }) {
 
   // Roblox's public signup username validator. Keep this request server-side
   // so the browser does not run into cross-origin restrictions.
-  const endpoint = "https://users.roblox.com/v1/usernames/validate";
+  const endpoint = "https://auth.roblox.com/v1/usernames/validate";
 
   try {
     const response = await fetch(endpoint, {
