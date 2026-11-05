@@ -8,7 +8,6 @@ export async function onRequestGet() {
 
 export async function onRequestPost({ request }) {
   let body;
-
   try {
     body = await request.json();
   } catch {
@@ -17,44 +16,37 @@ export async function onRequestPost({ request }) {
 
   const username = String(body.username || "").toLowerCase();
 
-  if (!/^[a-z0-9]{3}$/.test(username)) {
+  if (!/^[a-z0-9]{3,4}$/.test(username)) {
     return json({
       status: "invalid",
-      message: "Debe tener exactamente 3 caracteres alfanuméricos"
+      message: "Debe tener exactamente 3 o 4 caracteres alfanuméricos"
     }, 400);
   }
 
   try {
     const url = "https://auth.roblox.com/v1/usernames/validate";
-
     const payload = JSON.stringify({
       username,
       birthday: "2000-01-01T00:00:00.000Z",
       context: "Signup"
     });
-
-    const baseHeaders = {
+    const headers = {
       "Content-Type": "application/json",
       "Accept": "application/json"
     };
 
     let response = await fetch(url, {
       method: "POST",
-      headers: baseHeaders,
+      headers,
       body: payload
     });
 
-    // Obtener y utilizar el token anti-CSRF de Roblox.
     if (response.status === 403) {
       const token = response.headers.get("x-csrf-token");
-
       if (token) {
         response = await fetch(url, {
           method: "POST",
-          headers: {
-            ...baseHeaders,
-            "x-csrf-token": token
-          },
+          headers: { ...headers, "x-csrf-token": token },
           body: payload
         });
       }
@@ -68,13 +60,9 @@ export async function onRequestPost({ request }) {
     }
 
     if (!response.ok) {
-      const message = response.status === 403
-        ? "Roblox rechazó la consulta (403). Está bloqueando las solicitudes desde este servicio."
-        : `Roblox respondió HTTP ${response.status}`;
-
       return json({
         status: "unknown",
-        message,
+        message: `Roblox respondió HTTP ${response.status}`,
         upstreamStatus: response.status
       }, 502);
     }
@@ -82,31 +70,19 @@ export async function onRequestPost({ request }) {
     const data = await response.json();
 
     if (data.code === 0) {
-      return json({
-        status: "available",
-        message: "Roblox lo considera válido y disponible"
-      });
+      return json({ status: "available", message: "Roblox lo considera válido y disponible" });
     }
-
     if (data.code === 1) {
-      return json({
-        status: "taken",
-        message: "El nombre ya está ocupado"
-      });
+      return json({ status: "taken", message: "El nombre ya está ocupado" });
     }
-
     if (data.code === 2) {
-      return json({
-        status: "invalid",
-        message: "Roblox no permite este nombre"
-      });
+      return json({ status: "invalid", message: "Roblox no permite este nombre" });
     }
 
     return json({
       status: "unknown",
       message: `Respuesta no concluyente (${String(data.code)})`
     });
-
   } catch {
     return json({
       status: "unknown",
