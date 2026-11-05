@@ -20,19 +20,20 @@ select,input{width:100%;background:#071522;border:1px solid var(--line);color:va
 @media(max-width:560px){body{padding:18px 12px 35px}.panel{padding:16px}.controls{grid-template-columns:1fr}.stats{gap:6px}.stat b{font-size:19px}}
 </style></head>
 <body><main class="wrap">
-<header class="top"><div class="orb">✧</div><h1>OG NAME FINDER</h1><p class="sub">Buscador de usernames de 3 caracteres para Roblox</p></header>
+<header class="top"><div class="orb">✧</div><h1>OG NAME FINDER</h1><p class="sub">Buscador rápido de usernames de 3 y 4 caracteres para Roblox</p></header>
 <section class="panel">
 <h2>Generador</h2>
 <div class="controls">
 <div class="field"><label for="mode">¿Qué tipo de nombre quieres?</label><select id="mode"><option value="letters">Solo letras</option><option value="rare">Letras poco comunes</option><option value="mix">Letras y números mezclados</option><option value="digits">Más números que letras</option></select><small id="modeHelp" class="note" style="margin-top:0">Ejemplo: abc, qwe, rtz. Solo usa letras de la A a la Z.</small></div>
-<div class="field"><label for="amount">¿Cuántos nombres buscar?</label><select id="amount"><option>10</option><option selected>20</option><option>30</option></select></div>
+<div class="field"><label for="length">Longitud</label><select id="length"><option value="3" selected>3 caracteres</option><option value="4">4 caracteres</option></select></div>
+<div class="field"><label for="amount">¿Cuántos nombres buscar?</label><select id="amount"><option>10</option><option selected>20</option><option>30</option><option>50</option><option>100</option></select></div>
 </div>
 <div class="actions"><button id="start">Buscar nombres</button><button class="secondary" id="stop" disabled>Detener</button><button class="secondary" id="clear">Limpiar</button></div>
 <div class="status"><span id="status">Listo para buscar</span><span id="count">0 / 0</span></div><div class="bar"><i id="progress"></i></div>
-<p class="note">La página revisa los nombres uno por uno en Roblox. Puede tardar un poco. No necesitas iniciar sesión ni compartir tu contraseña.</p>
+<p class="note">La página comprueba varios nombres en paralelo para acelerar la búsqueda. Si Roblox limita las consultas, la búsqueda se pausa para evitar errores. No necesitas iniciar sesión ni compartir tu contraseña.</p>
 </section>
 <section class="panel">
-<h2>Comprobar un nombre</h2><div class="controls"><div class="field"><label for="custom">Username exacto (3 caracteres)</label><input id="custom" maxlength="3" placeholder="ej. q7x" autocapitalize="none" autocomplete="off"></div><div class="field" style="justify-content:end"><button id="checkOne">Comprobar nombre</button></div></div>
+<h2>Comprobar un nombre</h2><div class="controls"><div class="field"><label for="custom">Username exacto (3 o 4 caracteres)</label><input id="custom" maxlength="4" placeholder="ej. q7x o q7xz" autocapitalize="none" autocomplete="off"></div><div class="field" style="justify-content:end"><button id="checkOne">Comprobar nombre</button></div></div>
 </section>
 <section class="panel">
 <div style="display:flex;align-items:center;justify-content:space-between;gap:10px"><h2 style="margin:0">Resultados</h2><span class="pill" id="total">0 nombres</span></div>
@@ -46,6 +47,7 @@ select,input{width:100%;background:#071522;border:1px solid var(--line);color:va
 const $=id=>document.getElementById(id);let stopped=false,items=new Map(),busy=false;
 const modeHelp={letters:"Crea nombres con 3 letras normales. Ejemplo: abc.",rare:"Prueba más combinaciones con letras como q, x, z y j. No significa que estén libres.",mix:"Combina letras y números. Ejemplo: a7x.",digits:"Usa más números que letras. Ejemplo: 7a2."};
 $("mode").addEventListener("change",()=>$("modeHelp").textContent=modeHelp[$("mode").value]);
+$("length").addEventListener("change",()=>{$("custom").placeholder=Number($("length").value)===3?"ej. q7x":"ej. q7xz";});
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 function render(){
  const vals=[...items.values()],free=vals.filter(x=>x.status==="available"),used=vals.filter(x=>x.status==="taken"),unknown=vals.filter(x=>!["available","taken"].includes(x.status));
@@ -58,29 +60,29 @@ function render(){
  });
 }
 function candidates(n){
- const mode=$("mode").value;
- const letters="abcdefghijklmnopqrstuvwxyz",digits="0123456789";
- // Heurística: prioriza letras menos frecuentes en palabras comunes y combinaciones poco pronunciables.
- // No predice la base de datos de Roblox ni garantiza disponibilidad.
- const rarePool="qzxjvkwy";
- const chars=mode==="letters"?letters:mode==="rare"?rarePool:mode==="digits"?letters.slice(0,12)+digits:letters+digits;
- const set=new Set(),out=[];let tries=0;
- while(out.length<n&&tries<n*100){
-  tries++;
-  let s="";
-  if(mode==="rare"){
-   // Mezcla 2 letras raras con una letra restante; alterna posición para ampliar variedad.
-   const rare=rarePool[Math.floor(Math.random()*rarePool.length)];
-   const rare2=rarePool[Math.floor(Math.random()*rarePool.length)];
-   const extra=letters[Math.floor(Math.random()*letters.length)];
-   const pattern=Math.floor(Math.random()*3);
-   s=pattern===0?rare+rare2+extra:pattern===1?rare+extra+rare2:extra+rare+rare2;
-  } else {
-   for(let i=0;i<3;i++)s+=chars[Math.floor(Math.random()*chars.length)];
+  const mode=$("mode").value;
+  const length=Number($("length").value);
+  const letters="abcdefghijklmnopqrstuvwxyz",digits="0123456789";
+  const rarePool="qzxjvkwy";
+  const chars=mode==="letters"?letters:mode==="rare"?rarePool:mode==="digits"?letters.slice(0,12)+digits:letters+digits;
+  const set=new Set(),out=[];
+  let tries=0;
+  while(out.length<n&&tries<n*250){
+    tries++;
+    let s="";
+    if(mode==="rare"){
+      // Prioriza letras poco comunes, sin afirmar que sean más disponibles.
+      for(let i=0;i<length;i++){
+        const pool=i<Math.ceil(length/2)?rarePool:letters;
+        s+=pool[Math.floor(Math.random()*pool.length)];
+      }
+      s=s.split("").sort(()=>Math.random()-.5).join("");
+    }else{
+      for(let i=0;i<length;i++)s+=chars[Math.floor(Math.random()*chars.length)];
+    }
+    if(!set.has(s)&&!items.has(s)){set.add(s);out.push(s);}
   }
-  if(!set.has(s)&&!items.has(s)){set.add(s);out.push(s)}
- }
- return out;
+  return out;
 }
 async function check(name){
  try{
@@ -91,22 +93,46 @@ async function check(name){
  }catch(e){return {name,status:"unknown",message:"Error de conexión"}}
 }
 async function run(names){
- if(busy)return;busy=true;stopped=false;$("start").disabled=true;$("stop").disabled=false;
- let done=0;$("count").textContent=`0 / ${names.length}`;
- for(const name of names){
-  if(stopped)break;
-  $("status").textContent="Comprobando "+name+"…";
-  const result=await check(name);items.set(name,result);done++;render();$("count").textContent=`${done} / ${names.length}`;$("progress").style.width=(done/names.length*100)+"%";
-  if(result.message&&result.message.toLowerCase().includes("demasiadas consultas")){ $("status").textContent="Roblox pidió esperar. Búsqueda detenida.";break;}
-  if(done<names.length&&!stopped)await sleep(1600);
- }
- $("status").textContent=stopped?"Búsqueda detenida":`Finalizado: ${done} comprobaciones`;
- $("start").disabled=false;$("stop").disabled=true;busy=false;
+  if(busy)return;
+  busy=true;stopped=false;
+  $("start").disabled=true;$("stop").disabled=false;
+  let done=0,next=0,limited=false;
+  $("count").textContent=`0 / ${names.length}`;
+  $("progress").style.width="0%";
+
+  // Tres consultas simultáneas: más rápido, pero con un límite prudente.
+  async function worker(){
+    while(!stopped&&!limited){
+      const index=next++;
+      if(index>=names.length)return;
+      const name=names[index];
+      $("status").textContent=`Comprobando ${name}… (${done}/${names.length})`;
+      const result=await check(name);
+      items.set(name,result);
+      done++;
+      render();
+      $("count").textContent=`${done} / ${names.length}`;
+      $("progress").style.width=(done/names.length*100)+"%";
+
+      if(result.status==="rate_limited" || /429|limitó|demasiadas consultas/i.test(result.message||"")){
+        limited=true;
+        stopped=true;
+        $("status").textContent="Roblox limitó las consultas. Se detuvo la búsqueda para evitar más errores.";
+        return;
+      }
+    }
+  }
+
+  await Promise.all(Array.from({length:Math.min(3,names.length)},()=>worker()));
+  $("status").textContent=limited
+    ?"Roblox pidió esperar. Inténtalo más tarde."
+    :stopped?"Búsqueda detenida":`Finalizado: ${done} comprobaciones`;
+  $("start").disabled=false;$("stop").disabled=true;busy=false;
 }
 $("start").onclick=()=>run(candidates(Number($("amount").value)));
 $("stop").onclick=()=>{stopped=true;$("status").textContent="Deteniendo…"};
 $("clear").onclick=()=>{if(busy)return;items.clear();render();$("progress").style.width="0%";$("count").textContent="0 / 0";$("status").textContent="Lista limpia"};
-$("checkOne").onclick=async()=>{const name=$("custom").value.trim().toLowerCase();if(!/^[a-z0-9]{3}$/.test(name)){$("status").textContent="Escribe exactamente 3 letras o números.";return}if(busy)return;busy=true;$("checkOne").disabled=true;$("status").textContent="Comprobando "+name+"…";const res=await check(name);items.set(name,res);render();$("status").textContent=res.status==="available"?"¡Nombre disponible!":res.status==="taken"?"Ese nombre está ocupado.":"No se pudo confirmar.";busy=false;$("checkOne").disabled=false};
+$("checkOne").onclick=async()=>{const name=$("custom").value.trim().toLowerCase();if(!/^[a-z0-9]{3,4}$/.test(name)){$("status").textContent="Escribe un nombre de exactamente 3 o 4 caracteres.";return}if(busy)return;busy=true;$("checkOne").disabled=true;$("status").textContent="Comprobando "+name+"…";const res=await check(name);items.set(name,res);render();$("status").textContent=res.status==="available"?"¡Nombre disponible!":res.status==="taken"?"Ese nombre está ocupado.":"No se pudo confirmar.";busy=false;$("checkOne").disabled=false};
 $("copyFree").onclick=()=>{const names=[...items.values()].filter(x=>x.status==="available").map(x=>x.name).join("\n");if(names)navigator.clipboard?.writeText(names);};
 render();
 </script></body></html>
