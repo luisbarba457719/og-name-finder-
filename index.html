@@ -24,12 +24,12 @@ select,input{width:100%;background:#071522;border:1px solid var(--line);color:va
 <section class="panel">
 <h2>Generador</h2>
 <div class="controls">
-<div class="field"><label for="mode">Tipo de combinaciones</label><select id="mode"><option value="letters">Solo letras (a-z)</option><option value="rare">Letras raras primero (heurístico)</option><option value="mix">Letras + números (a-z, 0-9)</option><option value="digits">Letras y números, más números</option></select></div>
-<div class="field"><label for="amount">Intentos por búsqueda</label><select id="amount"><option>10</option><option selected>20</option><option>30</option></select></div>
+<div class="field"><label for="mode">¿Qué tipo de nombre quieres?</label><select id="mode"><option value="letters">Solo letras</option><option value="rare">Letras poco comunes</option><option value="mix">Letras y números mezclados</option><option value="digits">Más números que letras</option></select><small id="modeHelp" class="note" style="margin-top:0">Ejemplo: abc, qwe, rtz. Solo usa letras de la A a la Z.</small></div>
+<div class="field"><label for="amount">¿Cuántos nombres buscar?</label><select id="amount"><option>10</option><option selected>20</option><option>30</option></select></div>
 </div>
 <div class="actions"><button id="start">Buscar nombres</button><button class="secondary" id="stop" disabled>Detener</button><button class="secondary" id="clear">Limpiar</button></div>
 <div class="status"><span id="status">Listo para buscar</span><span id="count">0 / 0</span></div><div class="bar"><i id="progress"></i></div>
-<p class="note">La búsqueda consulta Roblox de uno en uno y hace pausas para reducir el riesgo de límites de velocidad. No usa tu contraseña ni necesita iniciar sesión.</p>
+<p class="note">La página revisa los nombres uno por uno en Roblox. Puede tardar un poco. No necesitas iniciar sesión ni compartir tu contraseña.</p>
 </section>
 <section class="panel">
 <h2>Comprobar un nombre</h2><div class="controls"><div class="field"><label for="custom">Username exacto (3 caracteres)</label><input id="custom" maxlength="3" placeholder="ej. q7x" autocapitalize="none" autocomplete="off"></div><div class="field" style="justify-content:end"><button id="checkOne">Comprobar nombre</button></div></div>
@@ -37,22 +37,24 @@ select,input{width:100%;background:#071522;border:1px solid var(--line);color:va
 <section class="panel">
 <div style="display:flex;align-items:center;justify-content:space-between;gap:10px"><h2 style="margin:0">Resultados</h2><span class="pill" id="total">0 nombres</span></div>
 <div class="stats"><div class="stat"><b id="free">0</b><span>DISPONIBLES</span></div><div class="stat"><b id="used">0</b><span>OCUPADOS</span></div><div class="stat"><b id="unknown">0</b><span>NO CONFIRMADOS</span></div></div>
-<div id="results" class="results"><div class="empty">Todavía no hay resultados. Inicia una búsqueda.</div></div>
+<div id="results" class="results"><div class="empty">Aquí aparecerán los nombres que Roblox logre revisar.</div></div>
 <div class="actions"><button class="secondary" id="copyFree">Copiar disponibles</button></div>
 </section>
 <footer class="note" style="text-align:center">Herramienta independiente y no afiliada a Roblox. La disponibilidad puede cambiar y Roblox decide finalmente si acepta el nombre.</footer>
 </main>
 <script>
 const $=id=>document.getElementById(id);let stopped=false,items=new Map(),busy=false;
+const modeHelp={letters:"Crea nombres con 3 letras normales. Ejemplo: abc.",rare:"Prueba más combinaciones con letras como q, x, z y j. No significa que estén libres.",mix:"Combina letras y números. Ejemplo: a7x.",digits:"Usa más números que letras. Ejemplo: 7a2."};
+$("mode").addEventListener("change",()=>$("modeHelp").textContent=modeHelp[$("mode").value]);
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 function render(){
  const vals=[...items.values()],free=vals.filter(x=>x.status==="available"),used=vals.filter(x=>x.status==="taken"),unknown=vals.filter(x=>!["available","taken"].includes(x.status));
  $("free").textContent=free.length;$("used").textContent=used.length;$("unknown").textContent=unknown.length;$("total").textContent=vals.length+" nombres";
- $("results").innerHTML=vals.length?"":"<div class='empty'>Todavía no hay resultados.</div>";
+ $("results").innerHTML=vals.length?"":"<div class='empty'>Aquí aparecerán los nombres que Roblox logre revisar.</div>";
  vals.sort((a,b)=>({available:0,taken:1,invalid:2,unknown:3}[a.status]-({available:0,taken:1,invalid:2,unknown:3}[b.status]))).forEach(x=>{
   const el=document.createElement("div");el.className="item "+(x.status==="available"?"available":x.status==="taken"?"taken":x.status==="invalid"?"invalid":"");
   const b=document.createElement("b");b.textContent=x.name;const btn=document.createElement("button");btn.className="secondary";btn.textContent="Copiar";btn.onclick=()=>navigator.clipboard?.writeText(x.name);el.append(b,btn);
-  const label=document.createElement("small");label.textContent=x.status==="available"?"LIBRE":x.status==="taken"?"OCUPADO":x.status==="invalid"?"NO VÁLIDO":"ERROR";label.style.cssText="font-size:9px;color:#9bb4c4;display:block";b.appendChild(label);$("results").appendChild(el);
+  const label=document.createElement("small");label.textContent=x.status==="available"?"DISPONIBLE":x.status==="taken"?"YA ESTÁ OCUPADO":x.status==="invalid"?"ROBLOX NO LO ACEPTA":(x.message||"NO SE PUDO COMPROBAR");label.style.cssText="font-size:9px;color:#9bb4c4;display:block;max-width:145px;line-height:1.35";b.appendChild(label);$("results").appendChild(el);
  });
 }
 function candidates(n){
@@ -84,7 +86,7 @@ async function check(name){
  try{
   const r=await fetch("/api/check",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({username:name})});
   const data=await r.json();
-  if(r.status===429||data.status==="rate_limited")return {name,status:"unknown",message:"Límite de consultas"};
+  if(r.status===429||data.status==="rate_limited")return {name,status:"unknown",message:data.message||"Roblox pidió esperar. Inténtalo más tarde."};
   return {name,status:data.status||"unknown",message:data.message||""};
  }catch(e){return {name,status:"unknown",message:"Error de conexión"}}
 }
@@ -95,7 +97,7 @@ async function run(names){
   if(stopped)break;
   $("status").textContent="Comprobando "+name+"…";
   const result=await check(name);items.set(name,result);done++;render();$("count").textContent=`${done} / ${names.length}`;$("progress").style.width=(done/names.length*100)+"%";
-  if(result.message==="Límite de consultas"){ $("status").textContent="Roblox pidió esperar. Búsqueda detenida.";break;}
+  if(result.message&&result.message.toLowerCase().includes("demasiadas consultas")){ $("status").textContent="Roblox pidió esperar. Búsqueda detenida.";break;}
   if(done<names.length&&!stopped)await sleep(1600);
  }
  $("status").textContent=stopped?"Búsqueda detenida":`Finalizado: ${done} comprobaciones`;
