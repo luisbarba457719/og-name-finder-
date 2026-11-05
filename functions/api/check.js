@@ -1,54 +1,126 @@
+export async function onRequestGet() {
+  return json({
+    ok: true,
+    service: "OG NAME FINDER API",
+    message: "La función de Cloudflare está activa."
+  });
+}
+
 export async function onRequestPost({ request }) {
   let body;
+
   try {
     body = await request.json();
   } catch {
-    return json({ status: "unknown", message: "La solicitud llegó incompleta." }, 400);
+    return json({ status: "unknown", message: "Solicitud no válida" }, 400);
   }
 
-  const username = String(body.username || "").trim();
-  if (!/^[a-zA-Z0-9]{3}$/.test(username)) {
-    return json({ status: "invalid", message: "Escribe exactamente 3 letras o números." }, 400);
-  }
+  const username = String(body.username || "").toLowerCase();
 
-  // Use Roblox's documented GET variant of the username validation endpoint.
-  const endpoint = new URL("https://auth.roblox.com/v1/usernames/validate");
-  endpoint.searchParams.set("request.username", username);
-  endpoint.searchParams.set("request.birthday", "2000-01-01T00:00:00.000Z");
-  endpoint.searchParams.set("request.context", "Signup");
+  if (!/^[a-z0-9]{3}$/.test(username)) {
+    return json({
+      status: "invalid",
+      message: "Debe tener exactamente 3 caracteres alfanuméricos"
+    }, 400);
+  }
 
   try {
-    const response = await fetch(endpoint.toString(), {
-      method: "GET",
-      headers: { "Accept": "application/json" }
+    const url = "https://auth.roblox.com/v1/usernames/validate";
+
+    const payload = JSON.stringify({
+      username,
+      birthday: "2000-01-01T00:00:00.000Z",
+      context: "Signup"
     });
 
-    if (response.status === 429) {
-      return json({ status: "rate_limited", message: "Roblox limitó temporalmente las consultas. Espera antes de volver a probar." });
+    const baseHeaders = {
+      "Content-Type": "application/json",
+      "Accept": "application/json"
+    };
+
+    let response = await fetch(url, {
+      method: "POST",
+      headers: baseHeaders,
+      body: payload
+    });
+
+    // Obtener y utilizar el token anti-CSRF de Roblox.
+    if (response.status === 403) {
+      const token = response.headers.get("x-csrf-token");
+
+      if (token) {
+        response = await fetch(url, {
+          method: "POST",
+          headers: {
+            ...baseHeaders,
+            "x-csrf-token": token
+          },
+          body: payload
+        });
+      }
     }
 
-    if (response.status === 403) {
-      return json({ status: "unknown", message: "Roblox está bloqueando las solicitudes que llegan desde el servidor de Cloudflare (403). No es posible confirmar disponibilidad desde esta conexión.", upstreamStatus: 403 });
+    if (response.status === 429) {
+      return json({
+        status: "rate_limited",
+        message: "Roblox limitó temporalmente las consultas"
+      }, 429);
     }
 
     if (!response.ok) {
-      return json({ status: "unknown", message: `Roblox respondió con HTTP ${response.status}. No se marcó el nombre como disponible ni ocupado.`, upstreamStatus: response.status });
+      const message = response.status === 403
+        ? "Roblox rechazó la consulta (403). Está bloqueando las solicitudes desde este servicio."
+        : `Roblox respondió HTTP ${response.status}`;
+
+      return json({
+        status: "unknown",
+        message,
+        upstreamStatus: response.status
+      }, 502);
     }
 
     const data = await response.json();
-    if (data.code === 0) return json({ status: "available", message: "Roblox lo considera disponible." });
-    if (data.code === 1) return json({ status: "taken", message: "El nombre ya está ocupado." });
-    if (data.code === 2) return json({ status: "invalid", message: "Roblox no permite este nombre." });
 
-    return json({ status: "unknown", message: `Respuesta de Roblox no reconocida (${String(data.code)}).` });
+    if (data.code === 0) {
+      return json({
+        status: "available",
+        message: "Roblox lo considera válido y disponible"
+      });
+    }
+
+    if (data.code === 1) {
+      return json({
+        status: "taken",
+        message: "El nombre ya está ocupado"
+      });
+    }
+
+    if (data.code === 2) {
+      return json({
+        status: "invalid",
+        message: "Roblox no permite este nombre"
+      });
+    }
+
+    return json({
+      status: "unknown",
+      message: `Respuesta no concluyente (${String(data.code)})`
+    });
+
   } catch {
-    return json({ status: "unknown", message: "Cloudflare no pudo conectar con Roblox. Inténtalo más tarde." });
+    return json({
+      status: "unknown",
+      message: "No se pudo contactar con Roblox desde Cloudflare"
+    }, 502);
   }
 }
 
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" }
+    headers: {
+      "Content-Type": "application/json; charset=utf-8",
+      "Cache-Control": "no-store"
+    }
   });
 }
